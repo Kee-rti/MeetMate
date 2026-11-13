@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MeetMate — AI Calendar Assistant</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2d3148;
+    --accent: #5b6af0;
+    --accent-light: #7c8ff5;
+    --success: #22c55e;
+    --warn: #f59e0b;
+    --error: #ef4444;
+    --text: #e8eaf6;
+    --text-muted: #8891b8;
+    --user-bubble: #2d3aa0;
+    --bot-bubble: #1e2235;
+    --radius: 12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .logo { font-size: 1.25rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .logo span { color: var(--accent-light); }
+
+  #cal-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+  }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--error);
+    flex-shrink: 0;
+  }
+  .status-dot.connected { background: var(--success); }
+  .status-dot.demo { background: var(--warn); }
+
+  #connect-btn {
+    padding: 6px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent-light);
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  #connect-btn:hover { background: var(--accent); color: #fff; }
+  #disconnect-btn {
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+  #disconnect-btn:hover { border-color: var(--error); color: var(--error); }
+
+  /* ── Chat area ── */
+  #chat-wrap {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    scroll-behavior: smooth;
+  }
+
+  .msg {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    max-width: 760px;
+    width: 100%;
+  }
+  .msg.user { align-self: flex-end; flex-direction: row-reverse; }
+  .msg.bot  { align-self: flex-start; }
+
+  .avatar {
+    width: 34px; height: 34px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem; flex-shrink: 0;
+  }
+  .msg.user .avatar { background: var(--user-bubble); }
+  .msg.bot  .avatar { background: var(--surface2); }
+
+  .bubble {
+    padding: 12px 16px;
+    border-radius: var(--radius);
+    line-height: 1.6;
+    font-size: 0.93rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .msg.user .bubble {
+    background: var(--user-bubble);
+    border-bottom-right-radius: 4px;
+  }
+  .msg.bot .bubble {
+    background: var(--bot-bubble);
+    border: 1px solid var(--border);
+    border-bottom-left-radius: 4px;
+  }
+
+  /* Markdown-style formatting */
+  .bubble strong { font-weight: 600; color: var(--accent-light); }
+  .bubble em { font-style: italic; color: var(--text-muted); }
+  .bubble code {
+    background: #0f1117;
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    font-family: monospace;
+  }
+  .bubble a { color: var(--accent-light); }
+
+  /* Meeting preview card */
+  .preview-card {
+    background: var(--surface2);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    margin-top: 10px;
+  }
+  .preview-card h3 { font-size: 1rem; color: var(--accent-light); margin-bottom: 8px; }
+  .preview-card table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  .preview-card td { padding: 4px 0; vertical-align: top; }
+  .preview-card td:first-child { color: var(--text-muted); padding-right: 12px; white-space: nowrap; }
+
+  .confirm-row {
+    display: flex; gap: 8px; margin-top: 12px;
+  }
+  .btn-confirm, .btn-cancel {
+    padding: 8px 20px; border-radius: 6px; border: none;
+    font-size: 0.88rem; font-weight: 600; cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .btn-confirm { background: var(--success); color: #fff; }
+  .btn-confirm:hover { opacity: 0.85; }
+  .btn-cancel  { background: transparent; border: 1px solid var(--error); color: var(--error); }
+  .btn-cancel:hover { background: var(--error); color: #fff; }
+
+  /* Typing indicator */
+  .typing { display: flex; gap: 5px; padding: 10px 14px; }
+  .typing span {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text-muted);
+    animation: bounce 1.2s infinite;
+  }
+  .typing span:nth-child(2) { animation-delay: 0.2s; }
+  .typing span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes bounce {
+    0%, 80%, 100% { transform: translateY(0); }
+    40% { transform: translateY(-6px); }
+  }
+
+  /* ── Input area ── */
+  #input-area {
+    padding: 14px 16px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    flex-shrink: 0;
+  }
+  #msg-input {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 0.95rem;
+    padding: 10px 14px;
+    resize: none;
+    min-height: 44px;
+    max-height: 140px;
+    line-height: 1.5;
+    outline: none;
+    font-family: inherit;
+    transition: border-color 0.15s;
+  }
+  #msg-input:focus { border-color: var(--accent); }
+  #msg-input::placeholder { color: var(--text-muted); }
+
+  #send-btn {
+    width: 44px; height: 44px;
+    background: var(--accent);
+    border: none; border-radius: 10px;
+    color: #fff; font-size: 1.1rem;
+    cursor: pointer; transition: background 0.15s;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  #send-btn:hover { background: var(--accent-light); }
+  #send-btn:disabled { opacity: 0.4; cursor: default; }
+
+  /* Toast */
+  #toast {
+    position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); padding: 10px 20px;
+    border-radius: 8px; font-size: 0.88rem;
+    opacity: 0; transition: opacity 0.3s;
+    pointer-events: none; z-index: 100;
+  }
+  #toast.show { opacity: 1; }
+
+  /* Scrollbar */
+  #chat-wrap::-webkit-scrollbar { width: 6px; }
+  #chat-wrap::-webkit-scrollbar-track { background: transparent; }
+  #chat-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* Suggestions */
+  .suggestions {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin-top: 10px;
+  }
+  .suggestion-chip {
+    padding: 6px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .suggestion-chip:hover { border-color: var(--accent); color: var(--accent-light); }
+
+  @media (max-width: 600px) {
+    header { padding: 10px 14px; }
+    #chat-wrap { padding: 14px 10px; }
+    .msg { max-width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">📅 <span>MeetMate</span></div>
+  <div id="cal-status">
+    <div class="status-dot" id="status-dot"></div>
+    <span id="status-text">Checking...</span>
+  </div>
+  <div id="header-actions"></div>
+</header>
+
+<div id="chat-wrap"></div>
+
+<div id="input-area">
+  <textarea id="msg-input" placeholder="Ask me to schedule a meeting…" rows="1"></textarea>
+  <button id="send-btn" title="Send">➤</button>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const chatWrap = document.getElementById('chat-wrap');
+const msgInput = document.getElementById('msg-input');
+const sendBtn  = document.getElementById('send-btn');
+const statusDot  = document.getElementById('status-dot');
+const statusText = document.getElementById('status-text');
+const headerActions = document.getElementById('header-actions');
+const toast = document.getElementById('toast');
+
+let conversationHistory = [];
+let calendarConnected = false;
+let demoMode = false;
+
+// ── Utilities ──────────────────────────────────────────────────────────────
+
+function showToast(msg, duration = 3000) {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), duration);
+}
+
+function escapeHtml(str) {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function formatMarkdown(text) {
+  // Bold
+  text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  // Italic
+  text = text.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  // Code
+  text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // Links
+  text = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // Bare URLs
+  text = text.replace(/(^|[\s])((https?:\/\/)[^\s]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+  return text;
+}
+
+// Auto-resize textarea
+msgInput.addEventListener('input', () => {
+  msgInput.style.height = 'auto';
+  msgInput.style.height = Math.min(msgInput.scrollHeight, 140) + 'px';
+});
+
+// ── Status check ──────────────────────────────────────────────────────────
+
+async function checkStatus() {
+  try {
+    const r = await fetch('/api/status');
+    const data = await r.json();
+    calendarConnected = data.calendar_connected;
+    demoMode = data.demo_mode;
+
+    if (demoMode) {
+      statusDot.className = 'status-dot demo';
+      statusText.textContent = 'Demo mode';
+      headerActions.innerHTML = '';
+    } else if (calendarConnected) {
+      statusDot.className = 'status-dot connected';
+      statusText.textContent = 'Calendar connected';
+      headerActions.innerHTML = `<button id="disconnect-btn" onclick="disconnect()">Disconnect</button>`;
+    } else if (data.google_configured) {
+      statusDot.className = 'status-dot';
+      statusText.textContent = 'Calendar not connected';
+      headerActions.innerHTML = `<button id="connect-btn" onclick="connectCalendar()">Connect Calendar</button>`;
+    } else {
+      statusDot.className = 'status-dot';
+      statusText.textContent = 'Google not configured';
+      headerActions.innerHTML = '';
+    }
+
+    // Handle URL params after OAuth
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('connected') === 'true') {
+      showToast('✅ Google Calendar connected!');
+      window.history.replaceState({}, '', '/');
+    } else if (params.get('error')) {
+      showToast('❌ OAuth error: ' + params.get('error'), 5000);
+      window.history.replaceState({}, '', '/');
+    }
+  } catch(e) {
+    statusText.textContent = 'Error';
+  }
+}
+
+function connectCalendar() {
+  window.location.href = '/oauth/connect';
+}
+
+async function disconnect() {
+  await fetch('/oauth/disconnect', { method: 'POST' });
+  calendarConnected = false;
+  await checkStatus();
+  showToast('Calendar disconnected.');
+}
+
+// ── Message rendering ──────────────────────────────────────────────────────
+
+function appendMessage(role, content) {
+  const wrapper = document.createElement('div');
+  wrapper.className = `msg ${role}`;
+
+  const avatar = document.createElement('div');
+  avatar.className = 'avatar';
+  avatar.textContent = role === 'user' ? '👤' : '🤖';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+
+  if (role === 'bot') {
+    bubble.innerHTML = formatMarkdown(escapeHtml(content));
+  } else {
+    bubble.textContent = content;
+  }
+
+  wrapper.appendChild(avatar);
+  wrapper.appendChild(bubble);
+  chatWrap.appendChild(wrapper);
+  chatWrap.scrollTop = chatWrap.scrollHeight;
+  return wrapper;
+}
+
+function appendTyping() {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'msg bot';
+  wrapper.id = 'typing-indicator';
+
+  const avatar = document.createElement('div');
+  avatar.className = 'avatar';
+  avatar.textContent = '🤖';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble typing';
+  bubble.innerHTML = '<span></span><span></span><span></span>';
+
+  wrapper.appendChild(avatar);
+  wrapper.appendChild(bubble);
+  chatWrap.appendChild(wrapper);
+  chatWrap.scrollTop = chatWrap.scrollHeight;
+  return wrapper;
+}
+
+// ── Proposal confirm/cancel ───────────────────────────────────────────────
+
+function appendProposalCard(proposal) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'msg bot';
+  wrapper.id = `proposal-${proposal.proposal_id}`;
+
+  const avatar = document.createElement('div');
+  avatar.className = 'avatar';
+  avatar.textContent = '🤖';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+
+  // Format datetimes nicely
+  function fmtDT(iso) {
+    if (!iso) return '—';
+    try {
+      return new Date(iso).toLocaleString('en-IN', {
+        weekday: 'short', year: 'numeric', month: 'short',
+        day: 'numeric', hour: '2-digit', minute: '2-digit',
+      });
+    } catch { return iso; }
+  }
+
+  const attendeesTxt = (proposal.attendees && proposal.attendees.length)
+    ? proposal.attendees.join(', ')
+    : 'None';
+
+  bubble.innerHTML = `
+    <div class="preview-card">
+      <h3>📋 Meeting Preview</h3>
+      <table>
+        <tr><td>Title</td><td><strong>${escapeHtml(proposal.summary)}</strong></td></tr>
+        <tr><td>Start</td><td>${escapeHtml(fmtDT(proposal.start_datetime))}</td></tr>
+        <tr><td>End</td><td>${escapeHtml(fmtDT(proposal.end_datetime))}</td></tr>
+        <tr><td>Attendees</td><td>${escapeHtml(attendeesTxt)}</td></tr>
+        ${proposal.description ? `<tr><td>Notes</td><td>${escapeHtml(proposal.description)}</td></tr>` : ''}
+      </table>
+      <div class="confirm-row">
+        <button class="btn-confirm" onclick="confirmProposal('${proposal.proposal_id}', this)">✅ Confirm &amp; Create</button>
+        <button class="btn-cancel" onclick="cancelProposal('${proposal.proposal_id}', this)">✖ Cancel</button>
+      </div>
+      <div class="proposal-status" id="pstatus-${proposal.proposal_id}" style="margin-top:8px;font-size:0.85rem;"></div>
+    </div>
+  `;
+
+  wrapper.appendChild(avatar);
+  wrapper.appendChild(bubble);
+  chatWrap.appendChild(wrapper);
+  chatWrap.scrollTop = chatWrap.scrollHeight;
+}
+
+async function confirmProposal(proposalId, btn) {
+  btn.disabled = true;
+  btn.textContent = 'Creating…';
+  const siblingCancel = btn.parentElement.querySelector('.btn-cancel');
+  if (siblingCancel) siblingCancel.disabled = true;
+  const statusEl = document.getElementById(`pstatus-${proposalId}`);
+
+  try {
+    const res = await fetch('/api/confirm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ proposal_id: proposalId }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      if (statusEl) statusEl.innerHTML = `<span style="color:var(--error)">❌ ${escapeHtml(data.detail || 'Error creating event.')}</span>`;
+      btn.textContent = '✅ Confirm & Create';
+      btn.disabled = false;
+      if (siblingCancel) siblingCancel.disabled = false;
+      return;
+    }
+
+    const ev = data.event || {};
+    const link = ev.html_link
+      ? `<a href="${ev.html_link}" target="_blank" rel="noopener">Open in Google Calendar →</a>`
+      : '';
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--success)">✅ Event created successfully! ${link}</span>`;
+    btn.textContent = '✅ Created';
+    conversationHistory.push({
+      role: 'assistant',
+      content: `✅ Meeting "${ev.summary || ''}" created. ${ev.html_link ? 'Link: ' + ev.html_link : ''}`,
+    });
+  } catch(e) {
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--error)">❌ Network error.</span>`;
+    btn.textContent = '✅ Confirm & Create';
+    btn.disabled = false;
+    if (siblingCancel) siblingCancel.disabled = false;
+  }
+}
+
+async function cancelProposal(proposalId, btn) {
+  btn.disabled = true;
+  const siblingConfirm = btn.parentElement.querySelector('.btn-confirm');
+  if (siblingConfirm) siblingConfirm.disabled = true;
+  const statusEl = document.getElementById(`pstatus-${proposalId}`);
+
+  try {
+    await fetch('/api/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ proposal_id: proposalId }),
+    });
+  } catch(e) { /* best-effort */ }
+
+  if (statusEl) statusEl.innerHTML = `<span style="color:var(--text-muted)">❌ Meeting cancelled.</span>`;
+  btn.textContent = '✖ Cancelled';
+  conversationHistory.push({ role: 'assistant', content: 'Meeting proposal cancelled.' });
+}
+
+// ── Chat ──────────────────────────────────────────────────────────────────
+
+async function sendMessage(text) {
+  if (!text.trim()) return;
+  msgInput.value = '';
+  msgInput.style.height = 'auto';
+  sendBtn.disabled = true;
+
+  appendMessage('user', text);
+  conversationHistory.push({ role: 'user', content: text });
+
+  const typingEl = appendTyping();
+
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: text,
+        history: conversationHistory.slice(0, -1),
+      }),
+    });
+
+    typingEl.remove();
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      appendMessage('bot', '❌ Error: ' + (err.detail || res.statusText));
+      return;
+    }
+
+    const data = await res.json();
+    const reply = data.reply || 'No response.';
+
+    conversationHistory.push({ role: 'assistant', content: reply });
+    appendMessage('bot', reply);
+
+    // If the backend returned a pending proposal, render the confirm card
+    if (data.proposal) {
+      appendProposalCard(data.proposal);
+    }
+
+  } catch(e) {
+    typingEl.remove();
+    appendMessage('bot', '❌ Network error. Please check the server is running.');
+  } finally {
+    sendBtn.disabled = false;
+    msgInput.focus();
+  }
+}
+
+sendBtn.addEventListener('click', () => sendMessage(msgInput.value));
+msgInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage(msgInput.value);
+  }
+});
+
+// ── Welcome message ───────────────────────────────────────────────────────
+
+function showWelcome() {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'msg bot';
+  wrapper.style.maxWidth = '600px';
+
+  const avatar = document.createElement('div');
+  avatar.className = 'avatar';
+  avatar.textContent = '🤖';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.innerHTML = `
+    <strong>👋 Hi! I'm MeetMate</strong>, your AI calendar assistant.<br/><br/>
+    I can schedule meetings, check your availability, and create Google Calendar events — 
+    but I'll always ask for your confirmation before creating anything.<br/><br/>
+    Try asking me:
+    <div class="suggestions">
+      <span class="suggestion-chip" onclick="sendMessage(this.textContent)">📅 Schedule a 30-min team sync tomorrow at 3 PM</span>
+      <span class="suggestion-chip" onclick="sendMessage(this.textContent)">🔍 What's on my calendar today?</span>
+      <span class="suggestion-chip" onclick="sendMessage(this.textContent)">⏰ Am I free at 2 PM on Friday?</span>
+    </div>
+  `;
+
+  wrapper.appendChild(avatar);
+  wrapper.appendChild(bubble);
+  chatWrap.appendChild(wrapper);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+
+checkStatus();
+showWelcome();
+msgInput.focus();
+</script>
+</body>
+</html>
